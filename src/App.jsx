@@ -7,6 +7,7 @@ import {
   query,
   runTransaction,
   serverTimestamp,
+  setDoc,
   Timestamp,
   where,
 } from "firebase/firestore";
@@ -30,6 +31,54 @@ function App() {
   const [message, setMessage] = useState("");
   const [slots, setSlots] = useState([]);
   const userId = "A1B2C3D4E5F6G7H8I9J0";
+
+  const createUser = async (userId, username, name, bio, website, file) => {
+    if (!userId || !username || !name) {
+      return { success: false, message: "Missing required fields." };
+    }
+
+    const userRef = doc(db, "users", userId);
+
+    try {
+      // Upload profile image (if provided)
+      const imageUrl = file ? await uploadProfileImage(userId, file) : null;
+
+      // User data to be stored in Firestore
+      const userData = {
+        username,
+        name,
+        bio: bio || "",
+        website: website || "",
+        cooldown: null, // Initial cooldown
+        last_upload: null, // Initial last upload
+        profile_views: 0,
+        streaks: 0,
+        total_likes: 0,
+        profile_imageURL: imageUrl,
+      };
+
+      await setDoc(userRef, userData);
+      return { success: true, message: "User created successfully!", userData };
+    } catch (error) {
+      console.error("❌ Error creating user:", error.message);
+      return { success: false, message: error.message };
+    }
+  };
+
+  const uploadProfileImage = async (userId, file) => {
+    if (!file) return null;
+
+    const filePath = `profile_pictures/${userId}`;
+    const fileRef = ref(storage, filePath);
+
+    try {
+      const uploadTask = await uploadBytesResumable(fileRef, file);
+      return await getDownloadURL(uploadTask.ref);
+    } catch (error) {
+      console.error("❌ Error uploading profile image:", error.message);
+      return null;
+    }
+  };
 
   const bookSlot = async (slot, userId) => {
     const slotRef = doc(db, "slots", slot);
@@ -330,6 +379,20 @@ function App() {
         />
         {/* <input type="file" onChange={(e) => setImage(e.target.files[0])} /> */}
         <button onClick={() => bookSlot(slot, userId)}>Book Slot</button>
+        <button
+          onClick={() =>
+            createUser(
+              userId,
+              "sumit_sharma",
+              "sumit sharma",
+              "this is my bio",
+              "mywebsite.com",
+              image
+            )
+          }
+        >
+          Create User
+        </button>
 
         {message && <p style={{ color: "black" }}>{message}</p>}
       </div>
