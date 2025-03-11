@@ -5,59 +5,64 @@ admin.initializeApp();
 const db = admin.firestore();
 const storage = admin.storage();
 
-// Scheduled function to clear expired slots every minute
 exports.clearExpiredSlots = functions.scheduler.onSchedule(
   "every 1 minutes",
   async (event) => {
-    const now = admin.firestore.Timestamp.now(); // Get current Firestore timestamp
-    const nowMillis = now.toMillis(); // Convert to milliseconds if needed
+    const now = admin.firestore.Timestamp.now();
 
     try {
       const slotsRef = db.collection("slots");
 
-      // Fetch expired slots (modify depending on how expires_at is stored)
       const snapshot = await slotsRef
-        .where("expires_at", "<=", nowMillis)
+        .where("expires_at", "<=", now)
+        // .where("status", "==", "booked")
         .get();
 
       if (snapshot.empty) {
-        console.log("✅ No expired slots found.");
+        console.log("No expired slots found.");
         return null;
       }
 
-      console.log(`⚡ Found ${snapshot.size} expired slots. Processing...`);
-      const batch = db.batch(); // Use batch for multiple updates
+      console.log(`Found ${snapshot.size} expired slots. Processing...`);
+      const batch = db.batch();
 
       for (const doc of snapshot.docs) {
         const slotData = doc.data();
-        console.log(`🔄 Processing slot: ${doc.id}`);
+        console.log(`Processing slot: ${doc.id}`);
 
-        // Remove image from Firebase Storage if it exists
         if (slotData.imageURL) {
           const filePath = extractFilePathFromURL(slotData.imageURL);
           if (filePath) {
             try {
               await storage.bucket().file(filePath).delete();
-              console.log(`🗑️ Deleted expired image: ${filePath}`);
+              console.log("Deleted expired image.");
             } catch (err) {
-              console.error("❌ Error deleting image:", err);
+              console.error("Error deleting image:", err);
             }
           }
         }
 
-        // Reset slot fields
+        const likeIdsRef = doc.ref.collection("like_ids");
+        const likeIdsSnapshot = await likeIdsRef.get();
+        for (const likeDoc of likeIdsSnapshot.docs) {
+          batch.delete(likeDoc.ref);
+        }
+
         batch.update(doc.ref, {
           imageURL: "",
-          booked_by: "",
+          likes: 0,
+          views: 0,
+          booked_by: null,
           status: "available",
+          expires_at: null,
           updated_at: admin.firestore.Timestamp.now(),
         });
       }
 
-      await batch.commit(); // Execute batch update
-      console.log("✅ Expired slots cleared successfully.");
+      await batch.commit();
+      console.log("Expired slots cleared successfully.");
     } catch (error) {
-      console.error("❌ Error clearing expired slots:", error);
+      console.error("Error clearing expired slots:", error);
     }
 
     return null;
@@ -71,25 +76,24 @@ function extractFilePathFromURL(url) {
     const match = decodedURL.match(/\/o\/(.*?)\?/);
     return match ? match[1] : null;
   } catch (error) {
-    console.error("❌ Error extracting file path:", error);
+    console.error("Error extracting file path:", error);
     return null;
   }
 }
 
 exports.resetStreaks = functions.scheduler.onSchedule(
-  "every day 00:00", // Runs at midnight daily
+  "every day 00:00",
   async (event) => {
     const now = admin.firestore.Timestamp.now();
-    const oneDayAgo = new Date(now.toMillis() - 24 * 60 * 60 * 1000); // 24 hours ago
+    const oneDayAgo = new admin.firestore.Timestamp(
+      now.seconds - 24 * 60 * 60, // Subtract 24 hours
+      now.nanoseconds
+    );
 
     try {
       const usersRef = db.collection("users");
       const snapshot = await usersRef
-        .where(
-          "last_upload",
-          "<=",
-          admin.firestore.Timestamp.fromDate(oneDayAgo)
-        )
+        .where("last_upload", "<=", oneDayAgo)
         .get();
 
       if (snapshot.empty) {
