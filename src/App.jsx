@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { db, storage } from "./firebase"; // Import Firebase setup
+import { db, storage, auth } from "./firebase"; // Import Firebase setup
 import {
   doc,
+  deleteDoc,
   getDoc,
   increment,
   query,
@@ -10,19 +11,20 @@ import {
   setDoc,
   Timestamp,
   where,
+  getFirestore,
+  collection,
+  getDocs,
+  onSnapshot,
+  updateDoc,
 } from "firebase/firestore";
 import {
   ref,
   uploadBytes,
   getDownloadURL,
   uploadBytesResumable,
+  deleteObject,
 } from "firebase/storage";
-import {
-  getFirestore,
-  collection,
-  getDocs,
-  onSnapshot,
-} from "firebase/firestore";
+import { deleteUser } from "firebase/auth";
 import "./App.css";
 
 function App() {
@@ -315,6 +317,94 @@ function App() {
     }
   };
 
+  // delete user and its data
+
+  const deleteProfileImage = async (imageURL) => {
+    if (!imageURL) return;
+
+    try {
+      const fileRef = ref(storage, imageURL);
+      await deleteObject(fileRef);
+      console.log("Profile image deleted successfully.");
+    } catch (error) {
+      console.error("Error deleting profile image:", error.message);
+    }
+  };
+
+  const resetUserSlot = async (userId) => {
+    const slotsCollection = collection(db, "slots");
+    const q = query(
+      slotsCollection,
+      where("booked_by", "==", doc(db, "users", userId))
+    );
+
+    try {
+      const querySnapshot = await getDocs(q);
+
+      if (!querySnapshot.empty) {
+        const slotDoc = querySnapshot.docs[0]; // Get the first (and only) slot
+        const slotRef = doc(db, "slots", slotDoc.id);
+
+        await updateDoc(slotRef, {
+          booked_by: null,
+          status: "available",
+          imageURL: "",
+          updated_at: null,
+          expires_at: null,
+          likes: 0,
+          views: 0,
+        });
+
+        console.log(`✅ Slot ${slotDoc.id} reset successfully.`);
+      }
+    } catch (error) {
+      console.error("❌ Error resetting slot:", error.message);
+    }
+  };
+
+  const deleteUserAccount = async (userId) => {
+    const userRef = doc(db, "users", userId);
+
+    try {
+      // Step 1: Get user document
+      const userDoc = await getDocs(userRef);
+      if (!userDoc.exists()) {
+        throw new Error("User does not exist.");
+      }
+
+      const userData = userDoc.data();
+      const profileImageURL = userData.profile_imageURL;
+
+      // Step 2: Delete profile image
+      await deleteProfileImage(profileImageURL);
+
+      // Step 3: Reset slots where user has posted
+      await resetUserSlot(userId);
+
+      // Step 4: Delete user document from Firestore
+      await deleteDoc(userRef);
+      console.log("User deleted from Firestore.");
+
+      // Step 5: Delete user from Firebase Authentication
+      const user = auth.currentUser;
+      if (user && user.uid === userId) {
+        await deleteUser(user);
+        console.log("User deleted from Firebase Authentication.");
+      } else {
+        throw new Error(
+          "Cannot delete user from authentication (user must be logged in)."
+        );
+      }
+
+      return { success: true, message: "User deleted successfully!" };
+    } catch (error) {
+      console.error("Error deleting user:", error.message);
+      return { success: false, message: error.message };
+    }
+  };
+
+  //  listen to slots in real-time
+
   const listenToSlotsWithUsersOptimized = (db, setSlots) => {
     const slotsCollection = collection(db, "slots");
 
@@ -433,7 +523,7 @@ function App() {
             <div key={image.id} style={{ textAlign: "center" }}>
               <img
                 src={image.imageURL}
-                // alt={`Slot ${image.slot_id}`}
+                alt={"alt"}
                 style={{ width: "100%", height: "auto", borderRadius: "10px" }}
               />
               <p>Slot: {image.slot_id}</p>
