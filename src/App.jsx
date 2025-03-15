@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { db, storage, auth } from "./firebase"; // Import Firebase setup
+import { db, storage } from "./firebase"; // Import Firebase setup
 import {
   doc,
   deleteDoc,
@@ -123,9 +123,55 @@ function App() {
 
       return result;
     } catch (error) {
+      console.log(error.message);
       return { success: false, message: error.message };
     }
   };
+
+  // const uploadImage = async (slot, userId, file) => {
+  //   if (!file) {
+  //     return { success: false, message: "No file selected for upload." };
+  //   }
+
+  //   const slotRef = doc(db, "slots", slot);
+  //   const userRef = doc(db, "users", userId);
+  //   const filePath = `uploads/${slot}/${Date.now()}`;
+  //   const fileRef = ref(storage, filePath);
+
+  //   try {
+  //     const uploadTask = await uploadBytesResumable(fileRef, file);
+  //     const imageUrl = await getDownloadURL(uploadTask.ref);
+
+  //     await runTransaction(db, async (transaction) => {
+  //       const expiresAt = Timestamp.fromDate(
+  //         new Date(Date.now() + 60 * 60 * 1000)
+  //       );
+  //       const cooldownEnd = Timestamp.fromDate(
+  //         new Date(Date.now() + 60 * 60 * 1000)
+  //       );
+
+  //       transaction.update(slotRef, {
+  //         expires_at: expiresAt,
+  //         imageURL: imageUrl,
+  //         status: "booked",
+  //         updated_at: serverTimestamp(),
+  //       });
+
+  //       transaction.update(userRef, {
+  //         streaks: increment(1),
+  //         last_upload: serverTimestamp(),
+  //         cooldown: cooldownEnd,
+  //       });
+  //     });
+
+  //     return {
+  //       success: true,
+  //       message: "Image uploaded, streak increased & cooldown applied",
+  //     };
+  //   } catch (error) {
+  //     return { success: false, message: error.message };
+  //   }
+  // };
 
   const uploadImage = async (slot, userId, file) => {
     if (!file) {
@@ -138,10 +184,35 @@ function App() {
     const fileRef = ref(storage, filePath);
 
     try {
+      // Upload file to Firebase Storage
       const uploadTask = await uploadBytesResumable(fileRef, file);
       const imageUrl = await getDownloadURL(uploadTask.ref);
 
       await runTransaction(db, async (transaction) => {
+        const userDoc = await transaction.get(userRef);
+
+        if (!userDoc.exists()) {
+          throw new Error("User does not exist.");
+        }
+
+        const userData = userDoc.data();
+        const lastUploadTimestamp = userData.last_upload?.toMillis() || 0;
+        const lastUploadDate = new Date(lastUploadTimestamp).toDateString();
+        const todayDate = new Date().toDateString();
+        const yesterdayDate = new Date(Date.now() - 86400000).toDateString(); // 24 hours ago
+
+        let newStreak = userData.streaks || 0;
+
+        if (lastUploadDate !== todayDate) {
+          // Only increment if it's a new day
+          if (lastUploadDate === yesterdayDate) {
+            newStreak += 1; // Continue streak
+          } else {
+            newStreak = 1; // Reset streak if gap is more than 1 day
+          }
+        }
+
+        // Expiry time for the slot (1 hour from now)
         const expiresAt = Timestamp.fromDate(
           new Date(Date.now() + 60 * 60 * 1000)
         );
@@ -149,6 +220,7 @@ function App() {
           new Date(Date.now() + 60 * 60 * 1000)
         );
 
+        // Update the slot document
         transaction.update(slotRef, {
           expires_at: expiresAt,
           imageURL: imageUrl,
@@ -156,8 +228,9 @@ function App() {
           updated_at: serverTimestamp(),
         });
 
+        // Update the user document with streak logic
         transaction.update(userRef, {
-          streaks: increment(1),
+          streaks: newStreak,
           last_upload: serverTimestamp(),
           cooldown: cooldownEnd,
         });
@@ -165,7 +238,7 @@ function App() {
 
       return {
         success: true,
-        message: "Image uploaded, streak increased & cooldown applied",
+        message: "Image uploaded, streak updated & cooldown applied",
       };
     } catch (error) {
       return { success: false, message: error.message };
@@ -273,19 +346,26 @@ function App() {
     }
   };
 
-  const incrementViewCount = async (slot) => {
+  const incrementUniqueViewCount = async (slot, userId) => {
+    if (!userId) return;
+
     const slotRef = doc(db, "slots", slot);
+    const viewerRef = doc(db, "slots", slot, "viewers", userId);
 
     try {
       await runTransaction(db, async (transaction) => {
-        transaction.update(slotRef, {
-          views: increment(1),
-        });
-      });
+        const viewerDoc = await transaction.get(viewerRef);
 
-      console.log("View count increased successfully!");
+        if (!viewerDoc.exists()) {
+          transaction.set(viewerRef, {});
+
+          transaction.update(slotRef, {
+            views: increment(1),
+          });
+        }
+      });
     } catch (error) {
-      console.error("Error increasing view count:", error.message);
+      console.error("Error updating view count:", error.message);
     }
   };
 
@@ -505,7 +585,9 @@ function App() {
         <button onClick={() => unlikeImage(slot, userId)}>
           Unlike the image
         </button>
-        <button onClick={() => incrementViewCount(slot)}>View count</button>
+        <button onClick={() => incrementUniqueViewCount(slot, userId)}>
+          View count
+        </button>
         <button onClick={() => incrementProfileViewCount(slot)}>
           Profile View count
         </button>
