@@ -33,6 +33,9 @@ function App() {
   const [message, setMessage] = useState("");
   const [slots, setSlots] = useState([]);
   const userId = "A1B2C3D4E5F6G7H8I9J0";
+  const viewerId = "A12345";
+
+  // user related functions
 
   const createUser = async (userId, username, name, bio, website, file) => {
     if (!userId || !username || !name) {
@@ -51,11 +54,11 @@ function App() {
         name,
         bio: bio || "",
         website: website || "",
-        cooldown: null, // Initial cooldown
-        last_upload: null, // Initial last upload
+        cooldown: null,
+        last_upload: null,
         profile_views: 0,
         streaks: 0,
-        total_likes: 0,
+        profile_likes: 0,
         profile_imageURL: imageUrl,
       };
 
@@ -77,10 +80,12 @@ function App() {
       const uploadTask = await uploadBytesResumable(fileRef, file);
       return await getDownloadURL(uploadTask.ref);
     } catch (error) {
-      console.error("❌ Error uploading profile image:", error.message);
+      console.error("Error uploading profile image:", error.message);
       return null;
     }
   };
+
+  // post related functions
 
   const bookSlot = async (slot, userId) => {
     const slotRef = doc(db, "slots", slot);
@@ -128,51 +133,6 @@ function App() {
     }
   };
 
-  // const uploadImage = async (slot, userId, file) => {
-  //   if (!file) {
-  //     return { success: false, message: "No file selected for upload." };
-  //   }
-
-  //   const slotRef = doc(db, "slots", slot);
-  //   const userRef = doc(db, "users", userId);
-  //   const filePath = `uploads/${slot}/${Date.now()}`;
-  //   const fileRef = ref(storage, filePath);
-
-  //   try {
-  //     const uploadTask = await uploadBytesResumable(fileRef, file);
-  //     const imageUrl = await getDownloadURL(uploadTask.ref);
-
-  //     await runTransaction(db, async (transaction) => {
-  //       const expiresAt = Timestamp.fromDate(
-  //         new Date(Date.now() + 60 * 60 * 1000)
-  //       );
-  //       const cooldownEnd = Timestamp.fromDate(
-  //         new Date(Date.now() + 60 * 60 * 1000)
-  //       );
-
-  //       transaction.update(slotRef, {
-  //         expires_at: expiresAt,
-  //         imageURL: imageUrl,
-  //         status: "booked",
-  //         updated_at: serverTimestamp(),
-  //       });
-
-  //       transaction.update(userRef, {
-  //         streaks: increment(1),
-  //         last_upload: serverTimestamp(),
-  //         cooldown: cooldownEnd,
-  //       });
-  //     });
-
-  //     return {
-  //       success: true,
-  //       message: "Image uploaded, streak increased & cooldown applied",
-  //     };
-  //   } catch (error) {
-  //     return { success: false, message: error.message };
-  //   }
-  // };
-
   const uploadImage = async (slot, userId, file) => {
     if (!file) {
       return { success: false, message: "No file selected for upload." };
@@ -199,20 +159,18 @@ function App() {
         const lastUploadTimestamp = userData.last_upload?.toMillis() || 0;
         const lastUploadDate = new Date(lastUploadTimestamp).toDateString();
         const todayDate = new Date().toDateString();
-        const yesterdayDate = new Date(Date.now() - 86400000).toDateString(); // 24 hours ago
+        const yesterdayDate = new Date(Date.now() - 86400000).toDateString();
 
         let newStreak = userData.streaks || 0;
 
         if (lastUploadDate !== todayDate) {
-          // Only increment if it's a new day
           if (lastUploadDate === yesterdayDate) {
-            newStreak += 1; // Continue streak
+            newStreak += 1;
           } else {
-            newStreak = 1; // Reset streak if gap is more than 1 day
+            newStreak = 1;
           }
         }
 
-        // Expiry time for the slot (1 hour from now)
         const expiresAt = Timestamp.fromDate(
           new Date(Date.now() + 60 * 60 * 1000)
         );
@@ -220,7 +178,6 @@ function App() {
           new Date(Date.now() + 60 * 60 * 1000)
         );
 
-        // Update the slot document
         transaction.update(slotRef, {
           expires_at: expiresAt,
           imageURL: imageUrl,
@@ -228,7 +185,6 @@ function App() {
           updated_at: serverTimestamp(),
         });
 
-        // Update the user document with streak logic
         transaction.update(userRef, {
           streaks: newStreak,
           last_upload: serverTimestamp(),
@@ -256,9 +212,9 @@ function App() {
         });
       });
 
-      console.log("✅ Slot reset successfully.");
+      console.log("Slot reset successfully.");
     } catch (error) {
-      console.error("❌ Error resetting slot:", error);
+      console.error("Error resetting slot:", error);
     }
   };
 
@@ -268,15 +224,15 @@ function App() {
 
     try {
       await runTransaction(db, async (transaction) => {
-        const slotDoc = await transaction.get(slotRef, {
-          fieldMask: ["booked_by"],
-        });
+        // const slotDoc = await transaction.get(slotRef, {
+        //   fieldMask: ["booked_by"],
+        // });
 
-        const bookedByRef = slotDoc.data().booked_by;
+        // const bookedByRef = slotDoc.data().booked_by;
 
-        if (!bookedByRef) {
-          throw new Error("No user found for this slot.");
-        }
+        // if (!bookedByRef) {
+        //   throw new Error("No user found for this slot.");
+        // }
 
         const likeDoc = await transaction.get(likeRef);
         if (likeDoc.exists()) {
@@ -289,9 +245,9 @@ function App() {
           likes: increment(1),
         });
 
-        transaction.update(bookedByRef, {
-          total_likes: increment(1),
-        });
+        // transaction.update(bookedByRef, {
+        //   total_likes: increment(1),
+        // });
       });
 
       console.log("✅ Image liked successfully!");
@@ -309,15 +265,15 @@ function App() {
     try {
       await runTransaction(db, async (transaction) => {
         // Fetch only the `booked_by` field
-        const slotDoc = await transaction.get(slotRef, {
-          fieldMask: ["booked_by"],
-        });
+        // const slotDoc = await transaction.get(slotRef, {
+        //   fieldMask: ["booked_by"],
+        // });
 
-        const bookedByRef = slotDoc.data().booked_by; // Get only the `booked_by` reference
+        // const bookedByRef = slotDoc.data().booked_by; // Get only the `booked_by` reference
 
-        if (!bookedByRef) {
-          throw new Error("No user found for this slot.");
-        }
+        // if (!bookedByRef) {
+        //   throw new Error("No user found for this slot.");
+        // }
 
         const likeDoc = await transaction.get(likeRef);
         if (!likeDoc.exists()) {
@@ -333,9 +289,9 @@ function App() {
         });
 
         // Decrement total likes in the user document (owner of the image)
-        transaction.update(bookedByRef, {
-          total_likes: increment(-1),
-        });
+        // transaction.update(bookedByRef, {
+        //   total_likes: increment(-1),
+        // });
       });
 
       console.log("✅ Image unliked successfully!");
@@ -350,7 +306,7 @@ function App() {
     if (!userId) return;
 
     const slotRef = doc(db, "slots", slot);
-    const viewerRef = doc(db, "slots", slot, "viewers", userId);
+    const viewerRef = doc(db, "slots", slot, "view_ids", userId);
 
     try {
       await runTransaction(db, async (transaction) => {
@@ -381,23 +337,48 @@ function App() {
     }
   };
 
-  const incrementProfileViewCount = async (userId) => {
+  // delete user and its data
+
+  const deleteUserAccount = async (userId) => {
     const userRef = doc(db, "users", userId);
 
     try {
-      await runTransaction(db, async (transaction) => {
-        transaction.update(userRef, {
-          profile_views: increment(1),
-        });
-      });
+      // Step 1: Get user document
+      const userDoc = await getDocs(userRef);
+      if (!userDoc.exists()) {
+        throw new Error("User does not exist.");
+      }
 
-      console.log("Profile view count increased successfully!");
+      const userData = userDoc.data();
+      const profileImageURL = userData.profile_imageURL;
+
+      // Step 2: Delete profile image
+      await deleteProfileImage(profileImageURL);
+
+      // Step 3: Reset slots where user has posted
+      await resetUserSlot(userId);
+
+      // Step 4: Delete user document from Firestore
+      await deleteDoc(userRef);
+      console.log("User deleted from Firestore.");
+
+      // Step 5: Delete user from Firebase Authentication
+      const user = auth.currentUser;
+      if (user && user.uid === userId) {
+        await deleteUser(user);
+        console.log("User deleted from Firebase Authentication.");
+      } else {
+        throw new Error(
+          "Cannot delete user from authentication (user must be logged in)."
+        );
+      }
+
+      return { success: true, message: "User deleted successfully!" };
     } catch (error) {
-      console.error("Error increasing profile view count:", error.message);
+      console.error("Error deleting user:", error.message);
+      return { success: false, message: error.message };
     }
   };
-
-  // delete user and its data
 
   const deleteProfileImage = async (imageURL) => {
     if (!imageURL) return;
@@ -442,44 +423,113 @@ function App() {
     }
   };
 
-  const deleteUserAccount = async (userId) => {
+  // user profile related functions
+
+  const incrementProfileViewCount = async (userId, viewerId) => {
+    if (!viewerId || viewerId === userId) {
+      return { success: false, message: "Invalid viewer ID." };
+    }
+
     const userRef = doc(db, "users", userId);
+    const profileViewRef = doc(
+      collection(userRef, "profile_view_ids"),
+      viewerId
+    );
 
     try {
-      // Step 1: Get user document
-      const userDoc = await getDocs(userRef);
-      if (!userDoc.exists()) {
-        throw new Error("User does not exist.");
-      }
+      await runTransaction(db, async (transaction) => {
+        const viewDoc = await transaction.get(profileViewRef);
 
-      const userData = userDoc.data();
-      const profileImageURL = userData.profile_imageURL;
+        if (!viewDoc.exists()) {
+          transaction.set(profileViewRef, {});
 
-      // Step 2: Delete profile image
-      await deleteProfileImage(profileImageURL);
+          transaction.update(userRef, {
+            profile_views: increment(1),
+          });
+        }
+      });
 
-      // Step 3: Reset slots where user has posted
-      await resetUserSlot(userId);
-
-      // Step 4: Delete user document from Firestore
-      await deleteDoc(userRef);
-      console.log("User deleted from Firestore.");
-
-      // Step 5: Delete user from Firebase Authentication
-      const user = auth.currentUser;
-      if (user && user.uid === userId) {
-        await deleteUser(user);
-        console.log("User deleted from Firebase Authentication.");
-      } else {
-        throw new Error(
-          "Cannot delete user from authentication (user must be logged in)."
-        );
-      }
-
-      return { success: true, message: "User deleted successfully!" };
+      return { success: true, message: "Profile view recorded successfully." };
     } catch (error) {
-      console.error("Error deleting user:", error.message);
       return { success: false, message: error.message };
+    }
+  };
+
+  const likeProfile = async (userId, likerId) => {
+    if (!likerId || likerId === userId) {
+      return { success: false, message: "Invalid liker ID." };
+    }
+
+    const userRef = doc(db, "users", userId);
+    const profileLikeRef = doc(
+      collection(userRef, "profile_like_ids"),
+      likerId
+    );
+
+    try {
+      await runTransaction(db, async (transaction) => {
+        const likeDoc = await transaction.get(profileLikeRef);
+
+        if (!likeDoc.exists()) {
+          transaction.set(profileLikeRef, {});
+
+          transaction.update(userRef, {
+            profile_likes: increment(1),
+          });
+        }
+      });
+
+      return { success: true, message: "Profile like recorded successfully." };
+    } catch (error) {
+      return { success: false, message: error.message };
+    }
+  };
+
+  const unlikeProfile = async (userId, likerId) => {
+    if (!likerId || likerId === userId) {
+      return { success: false, message: "Invalid liker ID." };
+    }
+
+    const userRef = doc(db, "users", userId);
+    const profileLikeRef = doc(userRef, "profile_like_ids", likerId);
+
+    try {
+      await runTransaction(db, async (transaction) => {
+        const likeDoc = await transaction.get(profileLikeRef);
+
+        if (likeDoc.exists()) {
+          transaction.delete(profileLikeRef);
+
+          transaction.update(userRef, {
+            profile_likes: increment(-1),
+          });
+        }
+      });
+
+      return { success: true, message: "Profile like removed successfully." };
+    } catch (error) {
+      return { success: false, message: error.message };
+    }
+  };
+
+  const hasUserLikedProfile = async (userId, likerId) => {
+    if (!likerId || likerId === userId) {
+      return false;
+    }
+
+    const profileLikeRef = doc(
+      db,
+      "users",
+      userId,
+      "profile_like_ids",
+      likerId
+    );
+
+    try {
+      const likeDoc = await getDoc(profileLikeRef);
+      return likeDoc.exists();
+    } catch (error) {
+      return false;
     }
   };
 
@@ -588,8 +638,11 @@ function App() {
         <button onClick={() => incrementUniqueViewCount(slot, userId)}>
           View count
         </button>
-        <button onClick={() => incrementProfileViewCount(slot)}>
+        <button onClick={() => incrementProfileViewCount(userId, viewerId)}>
           Profile View count
+        </button>
+        <button onClick={() => unlikeProfile(userId, viewerId)}>
+          Unlike profile
         </button>
       </div>
 

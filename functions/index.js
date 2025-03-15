@@ -13,10 +13,7 @@ exports.clearExpiredSlots = functions.scheduler.onSchedule(
     try {
       const slotsRef = db.collection("slots");
 
-      const snapshot = await slotsRef
-        .where("expires_at", "<=", now)
-        // .where("status", "==", "booked")
-        .get();
+      const snapshot = await slotsRef.where("expires_at", "<=", now).get();
 
       if (snapshot.empty) {
         console.log("No expired slots found.");
@@ -46,6 +43,12 @@ exports.clearExpiredSlots = functions.scheduler.onSchedule(
         const likeIdsSnapshot = await likeIdsRef.get();
         for (const likeDoc of likeIdsSnapshot.docs) {
           batch.delete(likeDoc.ref);
+        }
+
+        const viewIdsRef = doc.ref.collection("view_ids");
+        const viewIdsSnapshot = await viewIdsRef.get();
+        for (const viewDoc of viewIdsSnapshot.docs) {
+          batch.delete(viewDoc.ref);
         }
 
         batch.update(doc.ref, {
