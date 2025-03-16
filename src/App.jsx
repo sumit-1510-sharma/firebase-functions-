@@ -113,9 +113,14 @@ function App() {
           throw new Error("Slot is already booked.");
         }
 
+        const expiresAt = Timestamp.fromDate(
+          new Date(Date.now() + 5 * 60 * 1000)
+        );
+
         transaction.update(slotRef, {
           booked_by: userRef,
           status: "processing",
+          expires_at: expiresAt,
         });
 
         const newCooldown = new Date(now + 5 * 60 * 1000);
@@ -416,14 +421,14 @@ function App() {
           views: 0,
         });
 
-        console.log(`✅ Slot ${slotDoc.id} reset successfully.`);
+        console.log(`Slot ${slotDoc.id} reset successfully.`);
       }
     } catch (error) {
-      console.error("❌ Error resetting slot:", error.message);
+      console.error("Error resetting slot:", error.message);
     }
   };
 
-  // user profile related functions
+  // user profile related functions (new functions)
 
   const incrementProfileViewCount = async (userId, viewerId) => {
     if (!viewerId || viewerId === userId) {
