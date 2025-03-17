@@ -5,72 +5,110 @@ admin.initializeApp();
 const db = admin.firestore();
 const storage = admin.storage();
 
-exports.clearExpiredSlots = functions.scheduler.onSchedule(
-  "every 1 minutes",
-  async (event) => {
-    const now = admin.firestore.Timestamp.now();
+async function clearExpiredSlots(db, storage) {
+  const now = new Date();
 
-    try {
-      const slotsRef = db.collection("slots");
+  try {
+    const slotsRef = db.collection("slots");
+    const snapshot = await slotsRef.where("expires_at", "<=", now).get();
 
-      const snapshot = await slotsRef.where("expires_at", "<=", now).get();
-
-      if (snapshot.empty) {
-        console.log("No expired slots found.");
-        return null;
-      }
-
-      console.log(`Found ${snapshot.size} expired slots. Processing...`);
-      const batch = db.batch();
-
-      for (const doc of snapshot.docs) {
-        const slotData = doc.data();
-        console.log(`Processing slot: ${doc.id}`);
-
-        if (slotData.imageURL) {
-          const filePath = extractFilePathFromURL(slotData.imageURL);
-          if (filePath) {
-            try {
-              await storage.bucket().file(filePath).delete();
-              console.log("Deleted expired image.");
-            } catch (err) {
-              console.error("Error deleting image:", err);
-            }
-          }
-        }
-
-        const likeIdsRef = doc.ref.collection("like_ids");
-        const likeIdsSnapshot = await likeIdsRef.get();
-        for (const likeDoc of likeIdsSnapshot.docs) {
-          batch.delete(likeDoc.ref);
-        }
-
-        const viewIdsRef = doc.ref.collection("view_ids");
-        const viewIdsSnapshot = await viewIdsRef.get();
-        for (const viewDoc of viewIdsSnapshot.docs) {
-          batch.delete(viewDoc.ref);
-        }
-
-        batch.update(doc.ref, {
-          imageURL: "",
-          likes: 0,
-          views: 0,
-          booked_by: null,
-          status: "available",
-          expires_at: null,
-          updated_at: admin.firestore.Timestamp.now(),
-        });
-      }
-
-      await batch.commit();
-      console.log("Expired slots cleared successfully.");
-    } catch (error) {
-      console.error("Error clearing expired slots:", error);
+    if (snapshot.empty) {
+      console.log("No expired slots found.");
+      return;
     }
 
-    return null;
+    console.log(`Found ${snapshot.size} expired slots. Processing...`);
+    const batch = db.batch();
+
+    for (const doc of snapshot.docs) {
+      const slotData = doc.data();
+      console.log(`Processing slot: ${doc.id}`);
+
+      // Delete image if it exists
+      if (slotData.imageURL) {
+        const filePath = extractFilePathFromURL(slotData.imageURL);
+        if (filePath) {
+          try {
+            await storage.bucket().file(filePath).delete();
+            console.log("Deleted expired image.");
+          } catch (err) {
+            console.error("Error deleting image:", err);
+          }
+        }
+      }
+
+      // Delete associated like_ids
+      const likeIdsRef = doc.ref.collection("like_ids");
+      const likeIdsSnapshot = await likeIdsRef.get();
+      for (const likeDoc of likeIdsSnapshot.docs) {
+        batch.delete(likeDoc.ref);
+      }
+
+      // Delete associated view_ids
+      const viewIdsRef = doc.ref.collection("view_ids");
+      const viewIdsSnapshot = await viewIdsRef.get();
+      for (const viewDoc of viewIdsSnapshot.docs) {
+        batch.delete(viewDoc.ref);
+      }
+
+      // Reset slot data
+      batch.update(doc.ref, {
+        imageURL: "",
+        likes: 0,
+        views: 0,
+        booked_by: null,
+        status: "available",
+        expires_at: null,
+        updated_at: new Date(),
+      });
+    }
+
+    await batch.commit();
+    console.log("Expired slots cleared successfully.");
+  } catch (error) {
+    console.error("Error clearing expired slots:", error);
   }
-);
+}
+
+// const functions = require("firebase-functions");
+// const admin = require("firebase-admin");
+const { CloudTasksClient } = require("@google-cloud/tasks");
+
+// admin.initializeApp();
+const tasksClient = new CloudTasksClient();
+
+const PROJECT_ID = "panoslice-web-version";
+const QUEUE_NAME = "cleanup-queue";
+const LOCATION = "us-central1"; // Change based on your region
+
+async function scheduleNextRun() {
+  const queuePath = tasksClient.queuePath(PROJECT_ID, LOCATION, QUEUE_NAME);
+
+  const payload = {
+    httpRequest: {
+      httpMethod: "POST",
+      url: `https://us-central1-${PROJECT_ID}.cloudfunctions.net/cleanupExpiredData`,
+      headers: { "Content-Type": "application/json" },
+    },
+    scheduleTime: {
+      seconds: Math.floor(Date.now() / 1000) + 10, // Run after 10 seconds
+    },
+  };
+
+  await tasksClient.createTask({ parent: queuePath, task: payload });
+}
+
+exports.cleanupExpiredData = functions.https.onRequest(async (req, res) => {
+  console.log("Cleaning up expired data...");
+
+  // Your logic to clear expired slots and storage
+  await clearExpiredSlots(db, storage);
+
+  // Schedule next run
+  await scheduleNextRun();
+
+  res.status(200).send("Cleanup done, next run scheduled.");
+});
 
 // Helper function to extract the file path from a Firebase Storage URL
 function extractFilePathFromURL(url) {

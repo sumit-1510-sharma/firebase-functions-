@@ -16,6 +16,7 @@ import {
   getDocs,
   onSnapshot,
   updateDoc,
+  limit,
 } from "firebase/firestore";
 import {
   ref,
@@ -32,7 +33,8 @@ function App() {
   const [image, setImage] = useState(null);
   const [message, setMessage] = useState("");
   const [slots, setSlots] = useState([]);
-  const userId = "A1B2C3D4E5F6G7H8I9J0";
+  // const userId = "A1B2C3D4E5F6G7H8I9J0";
+  const userId = "A12345";
   const viewerId = "A12345";
 
   // user related functions
@@ -56,9 +58,9 @@ function App() {
         website: website || "",
         cooldown: null,
         last_upload: null,
-        profile_views: 0,
+        total_views: 0,
         streaks: 0,
-        profile_likes: 0,
+        total_likes: 0,
         profile_imageURL: imageUrl,
       };
 
@@ -177,10 +179,10 @@ function App() {
         }
 
         const expiresAt = Timestamp.fromDate(
-          new Date(Date.now() + 60 * 60 * 1000)
+          new Date(Date.now() + 10 * 60 * 1000)
         );
         const cooldownEnd = Timestamp.fromDate(
-          new Date(Date.now() + 60 * 60 * 1000)
+          new Date(Date.now() + 10 * 60 * 1000)
         );
 
         transaction.update(slotRef, {
@@ -229,15 +231,15 @@ function App() {
 
     try {
       await runTransaction(db, async (transaction) => {
-        // const slotDoc = await transaction.get(slotRef, {
-        //   fieldMask: ["booked_by"],
-        // });
+        const slotDoc = await transaction.get(slotRef, {
+          fieldMask: ["booked_by"],
+        });
 
-        // const bookedByRef = slotDoc.data().booked_by;
+        const bookedByRef = slotDoc.data().booked_by;
 
-        // if (!bookedByRef) {
-        //   throw new Error("No user found for this slot.");
-        // }
+        if (!bookedByRef) {
+          throw new Error("No user found for this slot.");
+        }
 
         const likeDoc = await transaction.get(likeRef);
         if (likeDoc.exists()) {
@@ -250,9 +252,9 @@ function App() {
           likes: increment(1),
         });
 
-        // transaction.update(bookedByRef, {
-        //   total_likes: increment(1),
-        // });
+        transaction.update(bookedByRef, {
+          total_likes: increment(1),
+        });
       });
 
       console.log("✅ Image liked successfully!");
@@ -270,15 +272,15 @@ function App() {
     try {
       await runTransaction(db, async (transaction) => {
         // Fetch only the `booked_by` field
-        // const slotDoc = await transaction.get(slotRef, {
-        //   fieldMask: ["booked_by"],
-        // });
+        const slotDoc = await transaction.get(slotRef, {
+          fieldMask: ["booked_by"],
+        });
 
-        // const bookedByRef = slotDoc.data().booked_by; // Get only the `booked_by` reference
+        const bookedByRef = slotDoc.data().booked_by; // Get only the `booked_by` reference
 
-        // if (!bookedByRef) {
-        //   throw new Error("No user found for this slot.");
-        // }
+        if (!bookedByRef) {
+          throw new Error("No user found for this slot.");
+        }
 
         const likeDoc = await transaction.get(likeRef);
         if (!likeDoc.exists()) {
@@ -294,9 +296,9 @@ function App() {
         });
 
         // Decrement total likes in the user document (owner of the image)
-        // transaction.update(bookedByRef, {
-        //   total_likes: increment(-1),
-        // });
+        transaction.update(bookedByRef, {
+          total_likes: increment(-1),
+        });
       });
 
       console.log("✅ Image unliked successfully!");
@@ -308,8 +310,6 @@ function App() {
   };
 
   const incrementUniqueViewCount = async (slot, userId) => {
-    if (!userId) return;
-
     const slotRef = doc(db, "slots", slot);
     const viewerRef = doc(db, "slots", slot, "view_ids", userId);
 
@@ -317,11 +317,25 @@ function App() {
       await runTransaction(db, async (transaction) => {
         const viewerDoc = await transaction.get(viewerRef);
 
+        const slotDoc = await transaction.get(slotRef, {
+          fieldMask: ["booked_by"],
+        });
+
+        const bookedByRef = slotDoc.data().booked_by;
+
+        if (!bookedByRef) {
+          throw new Error("No user found for this slot.");
+        }
+
         if (!viewerDoc.exists()) {
           transaction.set(viewerRef, {});
 
           transaction.update(slotRef, {
             views: increment(1),
+          });
+
+          transaction.update(bookedByRef, {
+            total_views: increment(1),
           });
         }
       });
@@ -349,7 +363,8 @@ function App() {
 
     try {
       // Step 1: Get user document
-      const userDoc = await getDocs(userRef);
+      const userDoc = await getDoc(userRef);
+
       if (!userDoc.exists()) {
         throw new Error("User does not exist.");
       }
@@ -399,32 +414,47 @@ function App() {
 
   const resetUserSlot = async (userId) => {
     const slotsCollection = collection(db, "slots");
-    const q = query(
-      slotsCollection,
-      where("booked_by", "==", doc(db, "users", userId))
-    );
+    const userRef = doc(db, "users", userId);
 
     try {
-      const querySnapshot = await getDocs(q);
+      const q = query(
+        slotsCollection,
+        where("booked_by", "==", userRef),
+        limit(1)
+      );
+      const slotDocs = await getDocs(q);
 
-      if (!querySnapshot.empty) {
-        const slotDoc = querySnapshot.docs[0]; // Get the first (and only) slot
-        const slotRef = doc(db, "slots", slotDoc.id);
-
-        await updateDoc(slotRef, {
-          booked_by: null,
-          status: "available",
-          imageURL: "",
-          updated_at: null,
-          expires_at: null,
-          likes: 0,
-          views: 0,
-        });
-
-        console.log(`Slot ${slotDoc.id} reset successfully.`);
+      if (slotDocs.empty) {
+        console.log("No active slot found for this user.");
+        return;
       }
+
+      const slotDoc = slotDocs.docs[0]; // Get the first (and only) slot
+      const slotRef = slotDoc.ref;
+      const slotData = slotDoc.data();
+
+      // Delete image from Firebase Storage if exists
+      if (slotData.imageURL) {
+        const imageRef = ref(storage, slotData.imageURL);
+        await deleteObject(imageRef);
+        console.log("Slot image deleted successfully.");
+      }
+
+      // Reset slot in Firestore
+      await updateDoc(slotRef, {
+        booked_by: null, // Reset booked_by reference
+        status: "available",
+        imageURL: "",
+        expires_at: null,
+        updated_at: serverTimestamp(),
+        views: 0,
+        likes: 0,
+      });
+
+      console.log("Slot reset successfully.");
     } catch (error) {
-      console.error("Error resetting slot:", error.message);
+      console.error("Error resetting user slot:", error.message);
+      throw error;
     }
   };
 
@@ -648,6 +678,9 @@ function App() {
         </button>
         <button onClick={() => unlikeProfile(userId, viewerId)}>
           Unlike profile
+        </button>
+        <button onClick={() => deleteUserAccount(userId)}>
+          Delete profile
         </button>
       </div>
 
