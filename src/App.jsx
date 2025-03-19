@@ -37,10 +37,11 @@ function App() {
   // const userId = "A12345";
   const viewerId = "D63AB72A-E2D8-43DD-8B6F-0B38C5DA34DF";
   const updates = {
-    name: "sumit1",
+    name: "sumit2",
     bio: "This is my new bio",
-    website: "https://sumit1.com",
+    website: "https://sumit2.com",
     profile_image: image,
+    username: "sumit_sharma2",
   };
 
   // user related functions
@@ -468,35 +469,35 @@ function App() {
 
   const editUserProfile = async (userId, updates) => {
     const userRef = doc(db, "users", userId);
-    console.log(image);
 
     try {
-      // Step 1: Get current user data
+      // Step 1: Check if the user exists
       const userDoc = await getDoc(userRef);
       if (!userDoc.exists()) {
         throw new Error("User not found.");
       }
 
-      const userData = userDoc.data();
-      let updatedFields = { ...updates };
-
       // Step 2: Handle profile image upload (if a new one is provided)
       if (updates.profile_image) {
-        const newImageFile = updates.profile_image;
-
         const filePath = `profile_pictures/${userId}`;
         const fileRef = ref(storage, filePath);
-        const uploadTask = await uploadBytesResumable(fileRef, newImageFile);
-        const newImageURL = await getDownloadURL(uploadTask.ref);
 
-        updatedFields.profile_imageURL = newImageURL;
-        delete updatedFields.profile_image; 
+        await uploadBytesResumable(fileRef, updates.profile_image);
+        updates.profile_imageURL = await getDownloadURL(fileRef);
+
+        delete updates.profile_image;
       }
 
-      // Step 3: Update Firestore document with new values
-      await updateDoc(userRef, updatedFields);
+      // Step 3: Update Firestore document
+      await updateDoc(userRef, updates);
 
-      return { success: true, message: "Profile updated successfully!" };
+      // Step 4: Fetch the updated user document
+      const updatedUserDoc = await getDoc(userRef);
+      return {
+        success: true,
+        message: "Profile updated successfully!",
+        user: updatedUserDoc.data(),
+      };
     } catch (error) {
       return { success: false, message: error.message };
     }
