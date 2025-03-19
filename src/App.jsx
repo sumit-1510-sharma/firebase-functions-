@@ -33,9 +33,15 @@ function App() {
   const [image, setImage] = useState(null);
   const [message, setMessage] = useState("");
   const [slots, setSlots] = useState([]);
-  // const userId = "A1B2C3D4E5F6G7H8I9J0";
-  const userId = "A12345";
-  const viewerId = "A12345";
+  const userId = "A1B2C3D4E5F6G7H8I9J0";
+  // const userId = "A12345";
+  const viewerId = "D63AB72A-E2D8-43DD-8B6F-0B38C5DA34DF";
+  const updates = {
+    name: "sumit1",
+    bio: "This is my new bio",
+    website: "https://sumit1.com",
+    profile_image: image,
+  };
 
   // user related functions
 
@@ -179,10 +185,10 @@ function App() {
         }
 
         const expiresAt = Timestamp.fromDate(
-          new Date(Date.now() + 10 * 60 * 1000)
+          new Date(Date.now() + 20 * 60 * 1000)
         );
         const cooldownEnd = Timestamp.fromDate(
-          new Date(Date.now() + 10 * 60 * 1000)
+          new Date(Date.now() + 20 * 60 * 1000)
         );
 
         transaction.update(slotRef, {
@@ -348,7 +354,7 @@ function App() {
     try {
       const likeDocRef = doc(db, "slots", slot, "like_ids", userId);
       const likeDocSnap = await getDoc(likeDocRef);
-
+      console.log(likeDocSnap.exists());
       return likeDocSnap.exists();
     } catch (error) {
       console.error("Error checking like status:", error);
@@ -460,113 +466,149 @@ function App() {
 
   // user profile related functions (new functions)
 
-  const incrementProfileViewCount = async (userId, viewerId) => {
-    if (!viewerId || viewerId === userId) {
-      return { success: false, message: "Invalid viewer ID." };
-    }
-
+  const editUserProfile = async (userId, updates) => {
     const userRef = doc(db, "users", userId);
-    const profileViewRef = doc(
-      collection(userRef, "profile_view_ids"),
-      viewerId
-    );
+    console.log(image);
 
     try {
-      await runTransaction(db, async (transaction) => {
-        const viewDoc = await transaction.get(profileViewRef);
+      // Step 1: Get current user data
+      const userDoc = await getDoc(userRef);
+      if (!userDoc.exists()) {
+        throw new Error("User not found.");
+      }
 
-        if (!viewDoc.exists()) {
-          transaction.set(profileViewRef, {});
+      const userData = userDoc.data();
+      let updatedFields = { ...updates };
 
-          transaction.update(userRef, {
-            profile_views: increment(1),
-          });
-        }
-      });
+      // Step 2: Handle profile image upload (if a new one is provided)
+      if (updates.profile_image) {
+        const newImageFile = updates.profile_image;
 
-      return { success: true, message: "Profile view recorded successfully." };
+        const filePath = `profile_pictures/${userId}`;
+        const fileRef = ref(storage, filePath);
+        const uploadTask = await uploadBytesResumable(fileRef, newImageFile);
+        const newImageURL = await getDownloadURL(uploadTask.ref);
+
+        updatedFields.profile_imageURL = newImageURL;
+        delete updatedFields.profile_image; 
+      }
+
+      // Step 3: Update Firestore document with new values
+      await updateDoc(userRef, updatedFields);
+
+      return { success: true, message: "Profile updated successfully!" };
     } catch (error) {
       return { success: false, message: error.message };
     }
   };
 
-  const likeProfile = async (userId, likerId) => {
-    if (!likerId || likerId === userId) {
-      return { success: false, message: "Invalid liker ID." };
-    }
+  // const incrementProfileViewCount = async (userId, viewerId) => {
+  //   if (!viewerId || viewerId === userId) {
+  //     return { success: false, message: "Invalid viewer ID." };
+  //   }
 
-    const userRef = doc(db, "users", userId);
-    const profileLikeRef = doc(
-      collection(userRef, "profile_like_ids"),
-      likerId
-    );
+  //   const userRef = doc(db, "users", userId);
+  //   const profileViewRef = doc(
+  //     collection(userRef, "profile_view_ids"),
+  //     viewerId
+  //   );
 
-    try {
-      await runTransaction(db, async (transaction) => {
-        const likeDoc = await transaction.get(profileLikeRef);
+  //   try {
+  //     await runTransaction(db, async (transaction) => {
+  //       const viewDoc = await transaction.get(profileViewRef);
 
-        if (!likeDoc.exists()) {
-          transaction.set(profileLikeRef, {});
+  //       if (!viewDoc.exists()) {
+  //         transaction.set(profileViewRef, {});
 
-          transaction.update(userRef, {
-            profile_likes: increment(1),
-          });
-        }
-      });
+  //         transaction.update(userRef, {
+  //           profile_views: increment(1),
+  //         });
+  //       }
+  //     });
 
-      return { success: true, message: "Profile like recorded successfully." };
-    } catch (error) {
-      return { success: false, message: error.message };
-    }
-  };
+  //     return { success: true, message: "Profile view recorded successfully." };
+  //   } catch (error) {
+  //     return { success: false, message: error.message };
+  //   }
+  // };
 
-  const unlikeProfile = async (userId, likerId) => {
-    if (!likerId || likerId === userId) {
-      return { success: false, message: "Invalid liker ID." };
-    }
+  // const likeProfile = async (userId, likerId) => {
+  //   if (!likerId || likerId === userId) {
+  //     return { success: false, message: "Invalid liker ID." };
+  //   }
 
-    const userRef = doc(db, "users", userId);
-    const profileLikeRef = doc(userRef, "profile_like_ids", likerId);
+  //   const userRef = doc(db, "users", userId);
+  //   const profileLikeRef = doc(
+  //     collection(userRef, "profile_like_ids"),
+  //     likerId
+  //   );
 
-    try {
-      await runTransaction(db, async (transaction) => {
-        const likeDoc = await transaction.get(profileLikeRef);
+  //   try {
+  //     await runTransaction(db, async (transaction) => {
+  //       const likeDoc = await transaction.get(profileLikeRef);
 
-        if (likeDoc.exists()) {
-          transaction.delete(profileLikeRef);
+  //       if (!likeDoc.exists()) {
+  //         transaction.set(profileLikeRef, {});
 
-          transaction.update(userRef, {
-            profile_likes: increment(-1),
-          });
-        }
-      });
+  //         transaction.update(userRef, {
+  //           profile_likes: increment(1),
+  //         });
+  //       }
+  //     });
 
-      return { success: true, message: "Profile like removed successfully." };
-    } catch (error) {
-      return { success: false, message: error.message };
-    }
-  };
+  //     return { success: true, message: "Profile like recorded successfully." };
+  //   } catch (error) {
+  //     return { success: false, message: error.message };
+  //   }
+  // };
 
-  const hasUserLikedProfile = async (userId, likerId) => {
-    if (!likerId || likerId === userId) {
-      return false;
-    }
+  // const unlikeProfile = async (userId, likerId) => {
+  //   if (!likerId || likerId === userId) {
+  //     return { success: false, message: "Invalid liker ID." };
+  //   }
 
-    const profileLikeRef = doc(
-      db,
-      "users",
-      userId,
-      "profile_like_ids",
-      likerId
-    );
+  //   const userRef = doc(db, "users", userId);
+  //   const profileLikeRef = doc(userRef, "profile_like_ids", likerId);
 
-    try {
-      const likeDoc = await getDoc(profileLikeRef);
-      return likeDoc.exists();
-    } catch (error) {
-      return false;
-    }
-  };
+  //   try {
+  //     await runTransaction(db, async (transaction) => {
+  //       const likeDoc = await transaction.get(profileLikeRef);
+
+  //       if (likeDoc.exists()) {
+  //         transaction.delete(profileLikeRef);
+
+  //         transaction.update(userRef, {
+  //           profile_likes: increment(-1),
+  //         });
+  //       }
+  //     });
+
+  //     return { success: true, message: "Profile like removed successfully." };
+  //   } catch (error) {
+  //     return { success: false, message: error.message };
+  //   }
+  // };
+
+  // const hasUserLikedProfile = async (userId, likerId) => {
+  //   if (!likerId || likerId === userId) {
+  //     return false;
+  //   }
+
+  //   const profileLikeRef = doc(
+  //     db,
+  //     "users",
+  //     userId,
+  //     "profile_like_ids",
+  //     likerId
+  //   );
+
+  //   try {
+  //     const likeDoc = await getDoc(profileLikeRef);
+  //     return likeDoc.exists();
+  //   } catch (error) {
+  //     return false;
+  //   }
+  // };
 
   //  listen to slots in real-time
 
@@ -666,9 +708,14 @@ function App() {
         </button>
         {message && <p style={{ color: "black" }}>{message}</p>}
         <button onClick={() => resetSlot(slot)}>Reset Slot</button>
-        <button onClick={() => likeImage(slot, userId)}>Like the image</button>
+        <button onClick={() => likeImage(slot, viewerId)}>
+          Like the image
+        </button>
         <button onClick={() => unlikeImage(slot, userId)}>
           Unlike the image
+        </button>
+        <button onClick={() => hasUserLikedSlot(slot, viewerId)}>
+          has user liked slot
         </button>
         <button onClick={() => incrementUniqueViewCount(slot, userId)}>
           View count
@@ -681,6 +728,9 @@ function App() {
         </button>
         <button onClick={() => deleteUserAccount(userId)}>
           Delete profile
+        </button>
+        <button onClick={() => editUserProfile(userId, updates)}>
+          update profile
         </button>
       </div>
 
