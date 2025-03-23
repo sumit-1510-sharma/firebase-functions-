@@ -35,13 +35,13 @@ function App() {
   const [slots, setSlots] = useState([]);
   const userId = "A1B2C3D4E5F6G7H8I9J0";
   // const userId = "A12345";
-  const viewerId = "D63AB72A-E2D8-43DD-8B6F-0B38C5DA34DF";
+  const viewerId = "A12345";
   const updates = {
-    name: "sumit2",
+    name: "sumit sharma",
     bio: "This is my new bio",
-    website: "https://sumit2.com",
+    website: "https://sumitsharma.com",
     profile_image: image,
-    username: "sumit_sharma2",
+    username: "sumit_sharma",
   };
 
   // user related functions
@@ -616,52 +616,67 @@ function App() {
   const listenToSlotsWithUsersOptimized = (db, setSlots) => {
     const slotsCollection = collection(db, "slots");
 
-    const unsubscribe = onSnapshot(slotsCollection, async (snapshot) => {
+    let userUnsubscribes = []; // Store active user listeners
+
+    const unsubscribeSlots = onSnapshot(slotsCollection, async (snapshot) => {
       const slots = snapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
       }));
 
-      // Step 1: Extract unique user references from slots
+      // Extract unique user IDs from booked_by references
       const userRefs = [
         ...new Set(slots.map((slot) => slot.booked_by?.id).filter(Boolean)),
       ];
 
       if (userRefs.length === 0) {
-        setSlots(slots.map((slot) => ({ ...slot, user: null }))); // No users to fetch
+        setSlots(slots.map((slot) => ({ ...slot, user: null })));
         return;
       }
 
-      // Step 2: Batch fetch user documents in one query
+      // Unsubscribe previous user listeners to prevent memory leaks
+      userUnsubscribes.forEach((unsub) => unsub());
+      userUnsubscribes = [];
+
       const usersCollection = collection(db, "users");
-      const usersQuery = query(
-        usersCollection,
-        where("__name__", "in", userRefs)
-      );
-
-      const usersSnapshot = await getDocs(usersQuery);
       const usersMap = {};
-      usersSnapshot.docs.forEach((doc) => {
-        usersMap[doc.id] = { id: doc.id, ...doc.data() };
+
+      userRefs.forEach((userId) => {
+        const userDocRef = doc(usersCollection, userId);
+
+        // Listen to each user document in real-time
+        const unsubscribeUser = onSnapshot(userDocRef, (userSnapshot) => {
+          if (userSnapshot.exists()) {
+            usersMap[userId] = { id: userId, ...userSnapshot.data() };
+          } else {
+            delete usersMap[userId]; // Handle deleted user
+          }
+
+          // Update slots with the latest user data
+          const slotsWithUsers = slots.map((slot) => ({
+            ...slot,
+            user: slot.booked_by ? usersMap[slot.booked_by.id] || null : null,
+          }));
+
+          console.log(slotsWithUsers);
+          setSlots(slotsWithUsers);
+        });
+
+        userUnsubscribes.push(unsubscribeUser);
       });
-
-      // Step 3: Merge user data with slots
-      const slotsWithUsers = slots.map((slot) => ({
-        ...slot,
-        user: slot.booked_by ? usersMap[slot.booked_by.id] || null : null,
-      }));
-
-      console.log(slotsWithUsers);
-      setSlots(slotsWithUsers);
     });
 
-    return unsubscribe;
+    // Cleanup function to remove all listeners
+    return () => {
+      unsubscribeSlots();
+      userUnsubscribes.forEach((unsub) => unsub());
+    };
   };
 
   useEffect(() => {
     const unsubscribe = listenToSlotsWithUsersOptimized(db, setSlots);
     return () => unsubscribe();
-  }, []);
+  }, [db]); // Re-run if `db` changes
 
   return (
     <div className="container">

@@ -77,7 +77,11 @@ const { CloudTasksClient } = require("@google-cloud/tasks");
 // admin.initializeApp();
 const tasksClient = new CloudTasksClient();
 
-const PROJECT_ID = "panoslice-web-version";
+// const PROJECT_ID = "panoslice-web-version";
+// const QUEUE_NAME = "cleanup-queue";
+// const LOCATION = "us-central1"; // Change based on your region
+
+const PROJECT_ID = "found-bd6b0";
 const QUEUE_NAME = "cleanup-queue";
 const LOCATION = "us-central1"; // Change based on your region
 
@@ -91,7 +95,7 @@ async function scheduleNextRun() {
       headers: { "Content-Type": "application/json" },
     },
     scheduleTime: {
-      seconds: Math.floor(Date.now() / 1000) + 10, // Run after 10 seconds
+      seconds: Math.floor(Date.now() / 1000) + 5, // Run after 10 seconds
     },
   };
 
