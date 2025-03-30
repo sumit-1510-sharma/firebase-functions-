@@ -147,11 +147,25 @@ function App() {
   //   }
   // };
 
-  const bookSlot = async (slot, userId) => {
-    const slotRef = doc(db, "slots", slot);
+  const bookSlot = async (slotId, userId) => {
+    const slotRef = doc(db, "slots", slotId);
     const userRef = doc(db, "users", userId);
 
     try {
+      const activeSlotQuery = query(
+        collection(db, "slots"),
+        where("booked_by", "==", userRef),
+        where("expires_at", ">", Timestamp.now())
+      );
+
+      const activeSlotSnapshot = await getDocs(activeSlotQuery);
+
+      if (!activeSlotSnapshot.empty) {
+        throw new Error(
+          "You cannot upload another image until the first one expires."
+        );
+      }
+
       const result = await runTransaction(db, async (transaction) => {
         const userDoc = await transaction.get(userRef);
         if (!userDoc.exists()) {
@@ -162,38 +176,24 @@ function App() {
         const now = Date.now();
         const cooldownTime = userData.cooldown?.toMillis() || 0;
 
-        const activeSlotQuery = query(
-          collection(db, "slots"),
-          where("booked_by", "==", userRef),
-          where("expires_at", ">", Timestamp.now())
-        );
-
-        const activeSlotSnapshot = await getDocs(activeSlotQuery);
-
-        if (!activeSlotSnapshot.empty) {
-          throw new Error(
-            "You cannot upload another image until the first one expires."
-          );
-        }
-
         if (now < cooldownTime) {
           throw new Error("You are on cooldown. Try again later.");
         }
 
         const slotDoc = await transaction.get(slotRef);
-        const slotData = slotDoc.data();
-        if (slotData.status !== "available") {
+        if (!slotDoc.exists() || slotDoc.data().status !== "available") {
           throw new Error("Slot is already booked.");
         }
 
         const expiresAt = Timestamp.fromDate(new Date(now + 5 * 60 * 1000));
+        const newCooldown = Timestamp.fromDate(new Date(now + 5 * 60 * 1000));
+
         transaction.update(slotRef, {
           booked_by: userRef,
           status: "processing",
           expires_at: expiresAt,
         });
 
-        const newCooldown = new Date(now + 5 * 60 * 1000);
         transaction.update(userRef, {
           cooldown: newCooldown,
         });
