@@ -96,6 +96,57 @@ function App() {
 
   // post related functions
 
+  // const bookSlot = async (slot, userId) => {
+  //   const slotRef = doc(db, "slots", slot);
+  //   const userRef = doc(db, "users", userId);
+
+  //   try {
+  //     const result = await runTransaction(db, async (transaction) => {
+  //       const userDoc = await transaction.get(userRef);
+  //       if (!userDoc.exists()) {
+  //         throw new Error("User does not exist.");
+  //       }
+
+  //       const userData = userDoc.data();
+
+  //       const now = Date.now();
+  //       const cooldownTime = userData.cooldown?.toMillis() || 0;
+
+  //       if (now < cooldownTime) {
+  //         throw new Error("You are on cooldown. Try again later.");
+  //       }
+
+  //       const slotData = (await transaction.get(slotRef)).data();
+
+  //       if (slotData.status !== "available") {
+  //         throw new Error("Slot is already booked.");
+  //       }
+
+  //       const expiresAt = Timestamp.fromDate(
+  //         new Date(Date.now() + 5 * 60 * 1000)
+  //       );
+
+  //       transaction.update(slotRef, {
+  //         booked_by: userRef,
+  //         status: "processing",
+  //         expires_at: expiresAt,
+  //       });
+
+  //       const newCooldown = new Date(now + 5 * 60 * 1000);
+  //       transaction.update(userRef, {
+  //         cooldown: newCooldown,
+  //       });
+
+  //       return { success: true, message: "Slot booked successfully!" };
+  //     });
+
+  //     return result;
+  //   } catch (error) {
+  //     console.log(error.message);
+  //     return { success: false, message: error.message };
+  //   }
+  // };
+
   const bookSlot = async (slot, userId) => {
     const slotRef = doc(db, "slots", slot);
     const userRef = doc(db, "users", userId);
@@ -108,24 +159,34 @@ function App() {
         }
 
         const userData = userDoc.data();
-
         const now = Date.now();
         const cooldownTime = userData.cooldown?.toMillis() || 0;
+
+        const activeSlotQuery = query(
+          collection(db, "slots"),
+          where("booked_by", "==", userRef),
+          where("expires_at", ">", Timestamp.now())
+        );
+
+        const activeSlotSnapshot = await getDocs(activeSlotQuery);
+
+        if (!activeSlotSnapshot.empty) {
+          throw new Error(
+            "You cannot upload another image until the first one expires."
+          );
+        }
 
         if (now < cooldownTime) {
           throw new Error("You are on cooldown. Try again later.");
         }
 
-        const slotData = (await transaction.get(slotRef)).data();
-
+        const slotDoc = await transaction.get(slotRef);
+        const slotData = slotDoc.data();
         if (slotData.status !== "available") {
           throw new Error("Slot is already booked.");
         }
 
-        const expiresAt = Timestamp.fromDate(
-          new Date(Date.now() + 5 * 60 * 1000)
-        );
-
+        const expiresAt = Timestamp.fromDate(new Date(now + 5 * 60 * 1000));
         transaction.update(slotRef, {
           booked_by: userRef,
           status: "processing",
