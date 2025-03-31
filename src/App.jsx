@@ -161,9 +161,7 @@ function App() {
       const activeSlotSnapshot = await getDocs(activeSlotQuery);
 
       if (!activeSlotSnapshot.empty) {
-        throw new Error(
-          "You cannot upload another image until the first one expires."
-        );
+        throw new Error("🚫 Easy there! You can only claim one tile");
       }
 
       const result = await runTransaction(db, async (transaction) => {
