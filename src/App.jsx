@@ -27,6 +27,8 @@ import {
 } from "firebase/storage";
 import { deleteUser } from "firebase/auth";
 import "./App.css";
+const API_USER = import.meta.env.VITE_API_USER;
+const API_SECRET = import.meta.env.VITE_API_SECRET;
 
 function App() {
   const [slot, setSlot] = useState("");
@@ -211,22 +213,41 @@ function App() {
       return { success: false, message: "No file selected for upload." };
     }
 
-    const slotRef = doc(db, "slots", slot);
-    const userRef = doc(db, "users", userId);
-    const filePath = `uploads/${slot}/${Date.now()}`;
-    const fileRef = ref(storage, filePath);
-
     try {
-      // Upload file to Firebase Storage
+      const formData = new FormData();
+      formData.append("media", file);
+      formData.append("models", "nudity-2.1");
+      formData.append("api_user", API_USER);
+      formData.append("api_secret", API_SECRET);
+
+      const response = await fetch(
+        "https://api.sightengine.com/1.0/check.json",
+        {
+          method: "POST",
+          body: formData,
+        }
+      );
+
+      const moderationResult = await response.json();
+
+      if (
+        moderationResult.status !== "success" ||
+        moderationResult.nudity.none < 0.5
+      ) {
+        return { success: false, message: "Image failed moderation." };
+      }
+
+      const slotRef = doc(db, "slots", slot);
+      const userRef = doc(db, "users", userId);
+      const filePath = `uploads/${slot}/${Date.now()}`;
+      const fileRef = ref(storage, filePath);
+
       const uploadTask = await uploadBytesResumable(fileRef, file);
       const imageUrl = await getDownloadURL(uploadTask.ref);
 
       await runTransaction(db, async (transaction) => {
         const userDoc = await transaction.get(userRef);
-
-        if (!userDoc.exists()) {
-          throw new Error("User does not exist.");
-        }
+        if (!userDoc.exists()) throw new Error("User does not exist.");
 
         const userData = userDoc.data();
         const lastUploadTimestamp = userData.last_upload?.toMillis() || 0;
@@ -235,13 +256,8 @@ function App() {
         const yesterdayDate = new Date(Date.now() - 86400000).toDateString();
 
         let newStreak = userData.streaks || 0;
-
         if (lastUploadDate !== todayDate) {
-          if (lastUploadDate === yesterdayDate) {
-            newStreak += 1;
-          } else {
-            newStreak = 1;
-          }
+          newStreak = lastUploadDate === yesterdayDate ? newStreak + 1 : 1;
         }
 
         const expiresAt = Timestamp.fromDate(
