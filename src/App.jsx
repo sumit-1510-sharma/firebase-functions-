@@ -38,6 +38,8 @@ function App() {
   const userId = "A1B2C3D4E5F6G7H8I9J0";
   // const userId = "A12345";
   const viewerId = "A12345";
+  const blockerId = "A12345";
+  const blockedId = "A12345";
   const updates = {
     name: "sumit sharma",
     bio: "This is my new bio",
@@ -71,6 +73,8 @@ function App() {
         streaks: 0,
         total_likes: 0,
         profile_imageURL: imageUrl,
+        banned: false,
+        report_count: 0,
       };
 
       await setDoc(userRef, userData);
@@ -95,6 +99,124 @@ function App() {
       return null;
     }
   };
+
+  // new functions start 2-4-2025
+  const reportUser = async (slotId, reporterId) => {
+    const slotRef = doc(db, "slots", slotId);
+
+    try {
+      await runTransaction(db, async (transaction) => {
+        const slotDoc = await transaction.get(slotRef);
+
+        const reportedUserRef = slotDoc.data().booked_by;
+        if (!reportedUserRef) {
+          throw new Error("No user associated with this slot.");
+        }
+
+        const reportedByRef = doc(
+          collection(reportedUserRef, "reported_by_ids"),
+          reporterId
+        );
+
+        // const existingReport = await transaction.get(reportedByRef);
+        // if (existingReport.exists()) {
+        //   throw new Error("You have already reported this user.");
+        // }
+
+        transaction.set(reportedByRef, {});
+
+        transaction.update(reportedUserRef, {
+          report_count: increment(1),
+        });
+      });
+
+      return { success: true, message: "Report submitted successfully." };
+    } catch (error) {
+      return { success: false, message: error.message };
+    }
+  };
+
+  const blockUser = async (userId, blockedId) => {
+    if (userId === blockedId) {
+      return { success: false, message: "You cannot block yourself." };
+    }
+
+    const blockerRef = doc(db, "users", userId);
+    const blockedRef = doc(collection(blockerRef, "blocked_ids"), blockedId);
+
+    try {
+      await runTransaction(db, async (transaction) => {
+        const existingBlock = await transaction.get(blockedRef);
+        if (existingBlock.exists()) {
+          throw new Error("User is already blocked.");
+        }
+
+        transaction.set(blockedRef, {});
+      });
+
+      return { success: true, message: "User blocked successfully." };
+    } catch (error) {
+      return { success: false, message: error.message };
+    }
+  };
+
+  const unblockUser = async (userId, blockedId) => {
+    if (userId === blockedId) {
+      return { success: false, message: "You cannot unblock yourself." };
+    }
+
+    const blockerRef = doc(db, "users", userId);
+    const blockedRef = doc(collection(blockerRef, "blocked_ids"), blockedId);
+
+    try {
+      await runTransaction(db, async (transaction) => {
+        const existingBlock = await transaction.get(blockedRef);
+        if (!existingBlock.exists()) {
+          throw new Error("User is not blocked.");
+        }
+
+        transaction.delete(blockedRef);
+      });
+
+      return { success: true, message: "User unblocked successfully." };
+    } catch (error) {
+      return { success: false, message: error.message };
+    }
+  };
+
+  const haveIBlockedThisUser = async (userId, blockedId) => {
+    if (userId === blockedId) {
+      return false;
+    }
+
+    const blockedRef = doc(db, "users", userId, "blocked_ids", blockedId);
+
+    try {
+      const blockedDoc = await getDoc(blockedRef);
+      return blockedDoc.exists();
+    } catch (error) {
+      console.error("Error checking block status:", error.message);
+      return false;
+    }
+  }; // use case : block/unblock button
+
+  const amIBlockedByThisUser = async (userId, blockerId) => {
+    if (userId === blockerId) {
+      return false;
+    }
+
+    const blockedRef = doc(db, "users", blockerId, "blocked_ids", userId);
+
+    try {
+      const blockedDoc = await getDoc(blockedRef);
+      return blockedDoc.exists();
+    } catch (error) {
+      console.error("Error checking if blocked:", error.message);
+      return false;
+    }
+  }; // use case : I will not be able to interact with that user's stats
+
+  // new functions end 2-4-2025
 
   // post related functions
 
@@ -232,7 +354,8 @@ function App() {
 
       if (
         moderationResult.status !== "success" ||
-        moderationResult.nudity.none < 0.5
+        moderationResult.nudity.sexual_activity > 0.5 ||
+        moderationResult.nudity.sexual_display > 0.5
       ) {
         return { success: false, message: "Image failed moderation." };
       }
@@ -822,6 +945,17 @@ function App() {
         </button>
         <button onClick={() => editUserProfile(userId, updates)}>
           update profile
+        </button>
+        <button onClick={() => reportUser(slot, userId)}>report user</button>
+        <button onClick={() => blockUser(userId, blockedId)}>block user</button>
+        <button onClick={() => unblockUser(userId, blockedId)}>
+          unblock user
+        </button>
+        <button onClick={() => haveIBlockedThisUser(userId, blockedId)}>
+          have I blocked this user
+        </button>
+        <button onClick={() => amIBlockedByThisUser(userId, blockerId)}>
+          Am I blocked by this user
         </button>
       </div>
 
