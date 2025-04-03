@@ -101,7 +101,7 @@ function App() {
     }
   };
 
-  // new functions start 2-4-2025
+  // new functions start 3-4-2025
   const reportUser = async (slotId, reporterId) => {
     const slotRef = doc(db, "slots", slotId);
 
@@ -220,7 +220,33 @@ function App() {
     }
   }; // use case : I will not be able to interact with that user's stats
 
-  // new functions end 2-4-2025
+  const getBlockedUsers = async (userId) => {
+    const blockedUsersRef = collection(doc(db, "users", userId), "blocked_ids");
+
+    try {
+      const blockedUsersSnapshot = await getDocs(blockedUsersRef);
+      if (blockedUsersSnapshot.empty) {
+        return {
+          success: true,
+          blockedUsers: [],
+          message: "No blocked users.",
+        };
+      }
+
+      const blockedUsers = blockedUsersSnapshot.docs.map((doc) => ({
+        userId: doc.id, // Blocked user's ID (document ID)
+        username: doc.data().username, // Username stored in the subcollection
+      }));
+
+      console.log(blockedUsers);
+
+      return { success: true, blockedUsers };
+    } catch (error) {
+      return { success: false, message: error.message };
+    }
+  };
+
+  // new functions end 3-4-2025
 
   // post related functions
 
@@ -963,6 +989,8 @@ function App() {
         <button onClick={() => amIBlockedByThisUser(userId, blockerId)}>
           Am I blocked by this user
         </button>
+        <button onClick={() => getBlockedUsers(userId)}>getBlockedUsers</button>
+        getBlockedUsers
       </div>
 
       <div
