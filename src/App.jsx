@@ -38,6 +38,7 @@ function App() {
   const userId = "A1B2C3D4E5F6G7H8I9J0";
   // const userId = "A12345";
   const viewerId = "A12345";
+  const username = "sumit_sharma";
   const blockerId = "A12345";
   const blockedId = "A12345";
   const updates = {
@@ -136,7 +137,7 @@ function App() {
     }
   };
 
-  const blockUser = async (userId, blockedId) => {
+  const blockUser = async (userId, blockedId, username) => {
     if (userId === blockedId) {
       return { success: false, message: "You cannot block yourself." };
     }
@@ -151,11 +152,14 @@ function App() {
           throw new Error("User is already blocked.");
         }
 
-        transaction.set(blockedRef, {});
+        transaction.set(blockedRef, {
+          username: username,
+        });
       });
 
       return { success: true, message: "User blocked successfully." };
     } catch (error) {
+      console.log(error.message);
       return { success: false, message: error.message };
     }
   };
@@ -947,7 +951,9 @@ function App() {
           update profile
         </button>
         <button onClick={() => reportUser(slot, userId)}>report user</button>
-        <button onClick={() => blockUser(userId, blockedId)}>block user</button>
+        <button onClick={() => blockUser(userId, blockedId, username)}>
+          block user
+        </button>
         <button onClick={() => unblockUser(userId, blockedId)}>
           unblock user
         </button>
