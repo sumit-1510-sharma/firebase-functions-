@@ -118,10 +118,10 @@ function App() {
           reporterId
         );
 
-        // const existingReport = await transaction.get(reportedByRef);
-        // if (existingReport.exists()) {
-        //   throw new Error("You have already reported this user.");
-        // }
+        const existingReport = await transaction.get(reportedByRef);
+        if (existingReport.exists()) {
+          throw new Error("You have already reported this user.");
+        }
 
         transaction.set(reportedByRef, {});
 
