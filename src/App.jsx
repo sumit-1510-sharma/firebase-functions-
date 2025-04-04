@@ -235,7 +235,7 @@ function App() {
 
       const blockedUsers = blockedUsersSnapshot.docs.map((doc) => ({
         userId: doc.id,
-        username: doc.data().username || "Unknown",
+        username: doc.data().name || "Unknown",
       }));
 
       console.log(blockedUsers);
